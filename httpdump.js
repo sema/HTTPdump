@@ -14,6 +14,7 @@ var payloadExtension = function(content_type, content_encoding) {
   var extensions = {'text/html': '.html',
                     'text/css': '.css',
                     'text/xml': '.xml',
+                    'text/json': '.json',
                     'text/javascript': '.js'};
       
   var extension = extensions[content_type];
@@ -27,7 +28,7 @@ var payloadExtension = function(content_type, content_encoding) {
 }
 
 var jsonSelector = function(key, value) {
-  var accepted = ['', 'httpVersion', 'statusCode', 'url', 'responseCode'];
+  var accepted = ['', 'method', 'httpVersion', 'statusCode', 'url', 'responseCode'];
     
   if (key == 'headers') return JSON.stringify(value);
   if (accepted.indexOf(key) > -1) return value;
@@ -48,6 +49,13 @@ var requestHandler = function(request, response) {
   var id = next_request_id++;
   var timestamp = Date.now();
 
+  var base_drop_path = drop_dir + id + '-' + timestamp + '-';
+  
+  var request_drop_path = base_drop_path + 'request.json';
+  var request_drop = fs.createWriteStream(request_drop_path)
+  request_drop.write(JSON.stringify(request, jsonSelector));
+  request_drop.end();
+  
   var request_url = url.parse(request.url);
 
   var options = {
@@ -60,35 +68,26 @@ var requestHandler = function(request, response) {
 
   var proxy_request = http.request(options, function(proxy_response) {
 
-    var content_type = proxy_response.headers['content-type'].split(';')[0];
+    var content_type = (proxy_response.headers['content-type'] || 'unknown').split(';')[0];
     var content_encoding = proxy_response.headers['content-encoding'];
 
-    var base_drop_path = drop_dir + id + '-' + 
-      timestamp + '-' + 
-      content_type.replace('/', '_') + '-';
+    var base_drop_path_response = base_drop_path + content_type.replace('/', '_') + '-';
 
     /* Drop (write to file) request and response */
 
-    var request_drop_path = base_drop_path + 'request.json';
-    var request_drop = fs.createWriteStream(request_drop_path)
-    request_drop.write(JSON.stringify(request, jsonSelector));
-    request_drop.end();
-
-    var response_drop_path = base_drop_path + 'response.json';
+    var response_drop_path = base_drop_path_response + 'response.json';
     var response_drop = fs.createWriteStream(response_drop_path)
     response_drop.write(JSON.stringify(proxy_response, jsonSelector));
     response_drop.end();
 
-
-    if (!content_type in exclude_payload) {
-      
-      var payload_drop_path = base_drop_path + 'payload' + payloadExtension(content_type,
-                                                                          content_encoding);
+    if (exclude_payload.indexOf(content_type) == -1) {
+      var payload_drop_path = base_drop_path_response + 'payload' + 
+        payloadExtension(content_type, content_encoding);
       
       var payload_drop = fs.createWriteStream(payload_drop_path);
     
       proxy_response.addListener('data', function(data) { 
-        payload_drop.write(chunk, 'binary'); 
+        payload_drop.write(data, 'binary'); 
       });
 
       proxy_response.addListener('end', function() { 
@@ -118,12 +117,17 @@ var requestHandler = function(request, response) {
     sys.log('Error encountered when handling url ' + request.url);
   });
 
+  var request_payload_drop_path = base_drop_path + 'request-payload.txt';
+  var request_payload_drop = fs.createWriteStream(request_payload_drop_path);
+  
   request.addListener('data', function(chunk) {
     proxy_request.write(chunk, 'binary');
+    request_payload_drop.write(chunk, 'binary');
   });
   
   request.addListener('end', function() {
     proxy_request.end();
+    request_payload_drop.end();
   });
 
 }
