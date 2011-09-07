@@ -1,0 +1,19 @@
+Purpose
+=======
+
+HTTPdump is a HTTP proxy used to monitor traffic between a client-server, and record this traffic using flat files for later analysis.
+
+Requirements
+============
+
+ * node.js 0.4.x
+
+Usage
+=====
+
+HTTPdump takes one argument - the folder it should store the flat files describing the HTTP traffic. If you need to change the proxy port or bind address you must edit the source code yourself.
+
+ > node httpdump.js /http/dump/path/
+
+All traffic sent through the proxy will be recorded into flat files stored in the provided path. For each request three files are created, one for the request headers, one for response headers (both in JSON format) and a payload file containing the response payload (e.g. a HTML or CSS file). Each file is given a name containing a sequential request ID, a timestamp and the response type.
+
