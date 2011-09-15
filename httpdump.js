@@ -15,7 +15,8 @@ var payloadExtension = function(content_type, content_encoding) {
                     'text/css': '.css',
                     'text/xml': '.xml',
                     'text/json': '.json',
-                    'text/javascript': '.js'};
+                    'text/javascript': '.js',
+                    'application/javascript': '.js'};
       
   var extension = extensions[content_type];
 
@@ -133,7 +134,7 @@ var requestHandler = function(request, response) {
 }
 
 if (process.argv.length < 3) {
-  process.stdout.write('usage: node ' + process.argv[1] + ' /output/dir\n');
+  process.stdout.write('usage: node httpdump.js /output/dir\n');
   process.exit(1);
 }
 
