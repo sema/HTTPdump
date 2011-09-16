@@ -1,34 +1,42 @@
 var http = require('http'),
-    sys = require('sys'),
     fs = require('fs'),
     url = require('url'),
     path = require('path'),
-    child_process = require('child_process');
+    child_process = require('child_process'),
+    uuid = require('node-uuid');
 
 var drop_dir;
-var next_request_id = 0;
 
-var exclude_payload = ['image/png', 'image/gif']
+var EXCLUDE_PAYLOAD = ['image/png', 'image/gif', 'image/jpg', 'image/jpeg', 'application/x-shockwave-flash']
 
-var payloadExtension = function(content_type, content_encoding) {
+var _uuid = uuid();
+var _next_id = 0;
+
+function getRequestResponseId() {
+  return _uuid + '-' + _next_id++; 
+}
+
+function getPayloadExtension(content_type, content_encoding) {
   var extensions = {'text/html': '.html',
                     'text/css': '.css',
                     'text/xml': '.xml',
                     'text/json': '.json',
+                    'application/json': '.json',
                     'text/javascript': '.js',
-                    'application/javascript': '.js'};
+                    'application/javascript': '.js',
+                    'application/x-javascript': '.js'};
       
   var extension = extensions[content_type];
 
   if (extension == undefined) {
-    sys.log('Unknown content-type [' + content_type + '] detected');
+    console.info('Unknown content-type [' + content_type + '] detected');
     extension = '';
   }
 
   return extension +  (content_encoding == 'gzip' ? '.gz' : '');
 }
 
-var jsonSelector = function(key, value) {
+function jsonSelector(key, value) {
   var accepted = ['', 'method', 'httpVersion', 'statusCode', 'url', 'responseCode'];
     
   if (key == 'headers') return JSON.stringify(value);
@@ -37,25 +45,27 @@ var jsonSelector = function(key, value) {
   return undefined;
 }
 
-var decompressPayload = function(payload_drop_path) {
+function decompressPayload (payload_drop_path) {
   child_process.exec('gzip -d ' + payload_drop_path,
     function(error) { if (error) {
-      sys.log('Error decompressing file ' + payload_drop_path);
+      console.log('Error decompressing file ' + payload_drop_path);
   }});
 }
 
-var requestHandler = function(request, response) {
+function requestHandler(request, response) {
   /* Handles each incoming request to the proxy server */
 
-  var id = next_request_id++;
-  var timestamp = Date.now();
-
-  var base_drop_path = drop_dir + id + '-' + timestamp + '-';
+  var id = getRequestResponseId();
+  var base_drop_path = drop_dir + id + '.';
   
-  var request_drop_path = base_drop_path + 'request.json';
-  var request_drop = fs.createWriteStream(request_drop_path)
-  request_drop.write(JSON.stringify(request, jsonSelector));
-  request_drop.end();
+  var request_headers_path = base_drop_path + 'request-headers.json';
+  var request_payload_path = base_drop_path + 'request-payload.txt';
+  var response_headers_path = base_drop_path + 'response-headers.json';
+  var response_payload_path = base_drop_path + 'response-payload'; 
+  
+  var request_headers_fp = fs.createWriteStream(request_headers_path)
+  request_headers_fp.write(JSON.stringify(request, jsonSelector));
+  request_headers_fp.end();
   
   var request_url = url.parse(request.url);
 
@@ -69,33 +79,29 @@ var requestHandler = function(request, response) {
 
   var proxy_request = http.request(options, function(proxy_response) {
 
-    var content_type = (proxy_response.headers['content-type'] || 'unknown').split(';')[0];
+    var content_type = (proxy_response.headers['content-type'] || 'unknown').split(';')[0].toLowerCase();
     var content_encoding = proxy_response.headers['content-encoding'];
-
-    var base_drop_path_response = base_drop_path + content_type.replace('/', '_') + '-';
 
     /* Drop (write to file) request and response */
 
-    var response_drop_path = base_drop_path_response + 'response.json';
-    var response_drop = fs.createWriteStream(response_drop_path)
-    response_drop.write(JSON.stringify(proxy_response, jsonSelector));
-    response_drop.end();
+    var response_headers_fp = fs.createWriteStream(response_headers_path)
+    response_headers_fp.write(JSON.stringify(proxy_response, jsonSelector));
+    response_headers_fp.end();
 
-    if (exclude_payload.indexOf(content_type) == -1) {
-      var payload_drop_path = base_drop_path_response + 'payload' + 
-        payloadExtension(content_type, content_encoding);
+    if (EXCLUDE_PAYLOAD.indexOf(content_type) == -1) {
+      response_payload_path += getPayloadExtension(content_type, content_encoding);
       
-      var payload_drop = fs.createWriteStream(payload_drop_path);
-    
+      var response_payload_fp = fs.createWriteStream(response_payload_path);
+  
       proxy_response.addListener('data', function(data) { 
-        payload_drop.write(data, 'binary'); 
+        response_payload_fp.write(data, 'binary'); 
       });
 
       proxy_response.addListener('end', function() { 
-        payload_drop.end(); 
+        response_payload_fp.end(); 
 
         if (content_encoding == 'gzip') {
-          decompressPayload(payload_drop_path);
+          decompressPayload(response_payload_path);
         } 
       
       });
@@ -115,20 +121,19 @@ var requestHandler = function(request, response) {
   });
   
   proxy_request.on('error', function(e) {
-    sys.log('Error encountered when handling url ' + request.url);
+    console.error('Error encountered when handling url ' + request.url);
   });
 
-  var request_payload_drop_path = base_drop_path + 'request-payload.txt';
-  var request_payload_drop = fs.createWriteStream(request_payload_drop_path);
+  var request_payload_fp = fs.createWriteStream(request_payload_path);
   
   request.addListener('data', function(chunk) {
     proxy_request.write(chunk, 'binary');
-    request_payload_drop.write(chunk, 'binary');
+    request_payload_fp.write(chunk, 'binary');
   });
   
   request.addListener('end', function() {
     proxy_request.end();
-    request_payload_drop.end();
+    request_payload_fp.end();
   });
 
 }
@@ -140,6 +145,5 @@ if (process.argv.length < 3) {
 
 drop_dir = path.join(process.argv[2], '/');
 http.createServer(requestHandler).listen(8080);
-
 
 process.stdout.write('proxy server created on port 8080\n');
