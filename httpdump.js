@@ -68,10 +68,14 @@ function requestHandler(request, response) {
   request_headers_fp.end();
   
   var request_url = url.parse(request.url);
+  
+  target = request.headers['host'].split(':');
+  hostname = target[0];
+  port = (target.length > 1) ? target[1] : 80;
 
   var options = {
-    host: request.headers['host'],
-    port: 80,
+    host: hostname,
+    port: port,
     method: request.method, 
     path: (request_url.pathname || '/') + (request_url.search || ''), 
     headers: request.headers
@@ -122,6 +126,7 @@ function requestHandler(request, response) {
   
   proxy_request.on('error', function(e) {
     console.error('Error encountered when handling url ' + request.url);
+    console.error(e);
   });
 
   var request_payload_fp = fs.createWriteStream(request_payload_path);
