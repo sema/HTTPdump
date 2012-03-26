@@ -22,6 +22,7 @@ function getPayloadExtension(content_type, content_encoding) {
                     'text/xml': '.xml',
                     'text/json': '.json',
                     'application/json': '.json',
+                    'text/plain', '.txt',
                     'text/javascript': '.js',
                     'application/javascript': '.js',
                     'application/x-javascript': '.js'};
